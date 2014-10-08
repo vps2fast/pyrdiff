@@ -280,41 +280,42 @@ class Delta(object):
 		rs = RollSum()
 
 		offset = 0
-		while offset+blocksize < len(buf):
+		global_shift = 0
+		while offset+blocksize < len(buf[global_shift:]):
 			# Prime the rolling sum
 			if rs.count == 0:
 				count = min(blocksize, len(buf))
-				rs.set(faster_rollsum(buf[:count]), count)
+				rs.set(faster_rollsum(buf[global_shift:global_shift+count]), count)
 				continue
 
 			# Plow through the data, byte at a time
 			try:
 				md4_table = sigs[rs.sum()]
-				md = md4(buf[offset:offset+blocksize])[:md4_truncation]
+				md = md4(buf[global_shift+offset:offset+blocksize+global_shift])[:md4_truncation]
 				file_offset = md4_table[md]
 				if offset > 0:
-					yield LiteralChange(buf[:offset])
+					yield LiteralChange(buf[global_shift:offset+global_shift])
 				yield CopyChange(file_offset, blocksize)
-				buf = buf[offset+blocksize:]
+				global_shift += offset+blocksize
 				offset = 0
 				rs = RollSum()
 			except KeyError:
-				rs.rotate(buf[offset+blocksize], buf[offset])
+				rs.rotate(buf[offset+blocksize+global_shift], buf[offset+global_shift])
 				offset += 1
 
 		# Processing the last block is a bit different
-		while offset < len(buf):
+		while offset < len(buf[global_shift:]):
 			# See if the last block is still at the end of file
 			try:
 				md4_table = sigs[rs.sum()]
-				md = md4(buf[offset:])[:md4_truncation]
+				md = md4(buf[global_shift+offset:])[:md4_truncation]
 				file_offset = md4_table[md]
 				if offset > 0:
-					yield LiteralChange(buf[:offset])
+					yield LiteralChange(buf[global_shift:global_shift+offset])
 				yield CopyChange(file_offset, blocksize)
 				return
 			except KeyError:
-				rs.rollout(buf[offset])
+				rs.rollout(buf[offset+global_shift])
 				offset += 1
 
 		# Eh, have the data then
